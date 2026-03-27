@@ -1,10 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Sparkles, Loader2, Zap, Github, Twitter, AlertCircle, XCircle, Heart, User as UserIcon, LogOut } from 'lucide-react';
+import { Search, Sparkles, Loader2, Zap, Github, Twitter, AlertCircle, XCircle, Heart, User as UserIcon, LogOut, Brain, CheckCircle2, Globe, BarChart3, Youtube, Briefcase, GraduationCap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TOOLS_DB, CATEGORIES } from './lib/tools-db';
-import { Tool } from './types';
+import { WORKFLOW_TEMPLATES } from './lib/workflows-db';
+import { Tool, UserProfile, AiContext, AppLanguage, WorkflowTemplate, UserBudget, PrivacySettings } from './types';
 import ToolCard from './components/ToolCard';
 import CategoryPills from './components/CategoryPills';
+import AiContextModal from './components/AiContextModal';
+import { WorkflowSection } from './components/WorkflowSection';
+import { CostIntelligence } from './components/CostIntelligence';
+import { PrivacyTransparency } from './components/PrivacyTransparency';
+import { TRANSLATIONS } from './lib/translations';
+import { calculateCost } from './lib/cost-utils';
 import { auth, loginWithGoogle, logout, onAuthStateChanged, db, doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, User, handleFirestoreError, OperationType } from './firebase';
 
 export default function App() {
@@ -18,9 +25,25 @@ export default function App() {
   
   // Auth & Favorites State
   const [user, setUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [isAiContextModalOpen, setIsAiContextModalOpen] = useState(false);
+  const [language, setLanguage] = useState<AppLanguage>('en');
+  const [translatedDescriptions, setTranslatedDescriptions] = useState<Record<string, string>>(() => {
+    try {
+      const cached = localStorage.getItem('nexus_translations');
+      return cached ? JSON.parse(cached) : {};
+    } catch (e) {
+      console.error('Failed to parse cached translations:', e);
+      return {};
+    }
+  });
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [appliedWorkflowId, setAppliedWorkflowId] = useState<string | null>(null);
+
+  const t = TRANSLATIONS[language];
 
   // Auth Listener
   useEffect(() => {
@@ -34,25 +57,40 @@ export default function App() {
         try {
           const userDoc = await getDoc(userDocRef);
           if (userDoc.exists()) {
-            setFavorites(userDoc.data().favorites || []);
+            const profile = userDoc.data() as UserProfile;
+            setUserProfile(profile);
+            setFavorites(profile.favorites || []);
+            if (profile.language) setLanguage(profile.language);
           } else {
             // Create initial profile
-            const initialProfile = {
+            const initialProfile: UserProfile = {
               uid: currentUser.uid,
-              email: currentUser.email,
-              displayName: currentUser.displayName,
-              photoURL: currentUser.photoURL,
+              email: currentUser.email || '',
+              displayName: currentUser.displayName || '',
+              photoURL: currentUser.photoURL || '',
               favorites: [],
+              language: 'en',
               role: 'user',
-              createdAt: new Date().toISOString()
+              createdAt: new Date().toISOString(),
+              budget: { limit: 5.00, alertThreshold: 80 },
+              totalSpend: 0,
+              costHistory: [],
+              privacy: {
+                dataLogging: false,
+                trainingOptOut: true,
+                retentionDays: 30
+              }
             };
             await setDoc(userDocRef, initialProfile);
+            setUserProfile(initialProfile);
             setFavorites([]);
+            setLanguage('en');
           }
         } catch (err) {
           handleFirestoreError(err, OperationType.GET, `users/${currentUser.uid}`);
         }
       } else {
+        setUserProfile(null);
         setFavorites([]);
         setShowFavoritesOnly(false);
       }
@@ -74,11 +112,11 @@ export default function App() {
     return () => clearTimeout(handler);
   }, [searchQuery, isSmartSearch]);
 
-  // Reset smart results and errors when query changes or mode changes
+  // Reset smart results and errors only when mode changes, not on every keystroke
   useEffect(() => {
     setSmartResults(null);
     setError(null);
-  }, [searchQuery, isSmartSearch]);
+  }, [isSmartSearch]);
 
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -104,6 +142,31 @@ export default function App() {
     }
   };
 
+  const handleApplyWorkflow = async (template: WorkflowTemplate) => {
+    setAppliedWorkflowId(template.id);
+    setSearchQuery(template.query);
+    
+    // Apply suggested context if user is logged in
+    if (user && template.suggestedContext) {
+      const userDocRef = doc(db, 'users', user.uid);
+      try {
+        await updateDoc(userDocRef, { aiContext: template.suggestedContext });
+        setUserProfile(prev => prev ? { ...prev, aiContext: template.suggestedContext } : null);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+      }
+    }
+
+    // Scroll to tools section
+    const toolsSection = document.getElementById('tools-section');
+    if (toolsSection) {
+      toolsSection.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    // Reset applied status after some time
+    setTimeout(() => setAppliedWorkflowId(null), 3000);
+  };
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
@@ -115,7 +178,11 @@ export default function App() {
         const response = await fetch('/api/smart-search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: searchQuery }),
+          body: JSON.stringify({ 
+            query: searchQuery,
+            aiContext: userProfile?.aiContext,
+            language: language
+          }),
         });
         
         if (!response.ok) {
@@ -128,6 +195,10 @@ export default function App() {
           setSmartResults(data.recommendedIds);
           if (data.recommendedIds.length === 0) {
             setError("AI couldn't find specific tools for this request. Try a different description.");
+          }
+          
+          if (data.usage) {
+            updateCostHistory('smart-search', data.model, data.usage.promptTokenCount, data.usage.candidatesTokenCount);
           }
         }
       } catch (err) {
@@ -161,6 +232,85 @@ export default function App() {
     }
   };
 
+  const handleSaveAiContext = async (context: AiContext) => {
+    if (!user) return;
+    const userDocRef = doc(db, 'users', user.uid);
+    try {
+      await updateDoc(userDocRef, { aiContext: context });
+      setUserProfile(prev => prev ? { ...prev, aiContext: context } : null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
+  const handleLanguageChange = async (newLang: AppLanguage) => {
+    setLanguage(newLang);
+    if (user) {
+      const userDocRef = doc(db, 'users', user.uid);
+      try {
+        await updateDoc(userDocRef, { language: newLang });
+        setUserProfile(prev => prev ? { ...prev, language: newLang } : null);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+      }
+    }
+  };
+
+  const handleUpdateBudget = async (budget: UserBudget) => {
+    if (!user) return;
+    const userDocRef = doc(db, 'users', user.uid);
+    try {
+      await updateDoc(userDocRef, { budget });
+      setUserProfile(prev => prev ? { ...prev, budget } : null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
+  const handleUpdatePrivacy = async (privacy: PrivacySettings) => {
+    if (!user) return;
+    const userDocRef = doc(db, 'users', user.uid);
+    try {
+      await updateDoc(userDocRef, { privacy });
+      setUserProfile(prev => prev ? { ...prev, privacy } : null);
+    } catch (err) {
+      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+    }
+  };
+
+  const updateCostHistory = async (operation: string, model: string, inputTokens: number, outputTokens: number) => {
+    if (!user || !userProfile) return;
+    
+    const cost = calculateCost(model, inputTokens, outputTokens);
+    const newRecord = {
+      id: Math.random().toString(36).substring(7),
+      timestamp: Date.now(),
+      operation,
+      model,
+      inputTokens,
+      outputTokens,
+      cost
+    };
+
+    const newTotalSpend = (userProfile.totalSpend || 0) + cost;
+    const newHistory = [...(userProfile.costHistory || []), newRecord].slice(-50); // Keep last 50
+
+    const userDocRef = doc(db, 'users', user.uid);
+    try {
+      await updateDoc(userDocRef, { 
+        totalSpend: newTotalSpend,
+        costHistory: newHistory
+      });
+      setUserProfile(prev => prev ? { 
+        ...prev, 
+        totalSpend: newTotalSpend, 
+        costHistory: newHistory 
+      } : null);
+    } catch (err) {
+      console.error('Failed to update cost history:', err);
+    }
+  };
+
   const filteredTools = useMemo(() => {
     let tools = TOOLS_DB;
 
@@ -170,8 +320,15 @@ export default function App() {
     }
 
     // Apply Smart Search results if available
-    if (isSmartSearch && smartResults) {
-      return tools.filter(t => smartResults.includes(t.id));
+    if (isSmartSearch) {
+      if (smartResults) {
+        return tools.filter(t => smartResults.includes(t.id));
+      }
+      // If in smart search mode but no results yet, and query is empty, show all
+      if (!searchQuery.trim()) return tools;
+      // If there's a query but no results yet, show nothing or previous tools
+      // Let's show nothing to indicate we're waiting for a search
+      return [];
     }
 
     // Apply Category Filter
@@ -192,6 +349,65 @@ export default function App() {
     return tools;
   }, [debouncedSearchQuery, activeCategory, isSmartSearch, smartResults, favorites, showFavoritesOnly]);
 
+  // Translation logic
+  useEffect(() => {
+    if (language === 'en' || filteredTools.length === 0) {
+      return;
+    }
+
+    const translateTools = async () => {
+      // Get pre-translated tools from the translation file
+      const preTranslated = t.toolDescriptions || {};
+      
+      // Only translate the first 24 tools to avoid massive API calls
+      // Filter out tools that are already in state, in localStorage, or pre-translated
+      const toolsToTranslate = filteredTools.slice(0, 24).filter(t => 
+        !translatedDescriptions[`${language}_${t.id}`] && !preTranslated[t.id]
+      );
+      
+      if (toolsToTranslate.length === 0) return;
+
+      setIsTranslating(true);
+      try {
+        const response = await fetch('/api/translate-tools', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            toolIds: toolsToTranslate.map(t => t.id),
+            language: language
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const newTranslations: Record<string, string> = {};
+          Object.entries(data.translations).forEach(([id, text]) => {
+            newTranslations[`${language}_${id}`] = text as string;
+          });
+
+          if (data.usage) {
+            updateCostHistory('translate-tools', data.model, data.usage.promptTokenCount, data.usage.candidatesTokenCount);
+          }
+
+          setTranslatedDescriptions(prev => {
+            const updated = { ...prev, ...newTranslations };
+            localStorage.setItem('nexus_translations', JSON.stringify(updated));
+            return updated;
+          });
+        }
+      } catch (err) {
+        console.error('Translation failed:', err);
+      } finally {
+        setIsTranslating(false);
+      }
+    };
+
+    const timeoutId = setTimeout(translateTools, 200);
+    return () => clearTimeout(timeoutId);
+  }, [language, filteredTools, t.toolDescriptions]);
+
+  // Reset translations state is not needed as we use language prefix in keys
+  
   if (!isAuthReady) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
@@ -213,14 +429,42 @@ export default function App() {
           </div>
           
           <div className="hidden md:flex items-center gap-6 text-sm font-medium text-zinc-400">
-            <a href="#" className="hover:text-white transition-colors">Directory</a>
-            <a href="#" className="hover:text-white transition-colors">Submit Tool</a>
-            <a href="#" className="hover:text-white transition-colors">Newsletter</a>
+            <a href="#" className="hover:text-white transition-colors">{t.directory}</a>
+            <a href="#" className="hover:text-white transition-colors">{t.submitTool}</a>
+            <a href="#" className="hover:text-white transition-colors">{t.newsletter}</a>
           </div>
 
           <div className="flex items-center gap-4">
+            <div className="relative group/lang">
+              <button className="flex items-center gap-1.5 p-2 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 transition-all">
+                <Globe size={18} />
+                <span className="text-xs font-bold uppercase">{language}</span>
+              </button>
+              <div className="absolute top-full right-0 mt-2 w-32 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl opacity-0 invisible group-hover/lang:opacity-100 group-hover/lang:visible transition-all z-[100] overflow-hidden">
+                {(['en', 'hi', 'hinglish', 'ta', 'te'] as AppLanguage[]).map(lang => (
+                  <button
+                    key={lang}
+                    onClick={() => handleLanguageChange(lang)}
+                    className={`w-full px-4 py-2 text-left text-xs font-bold uppercase tracking-wider hover:bg-zinc-800 transition-colors ${language === lang ? 'text-white bg-zinc-800' : 'text-zinc-500'}`}
+                  >
+                    {lang === 'en' ? 'English' : lang === 'hi' ? 'Hindi' : lang === 'hinglish' ? 'Hinglish' : lang === 'ta' ? 'Tamil' : 'Telugu'}
+                  </button>
+                ))}
+              </div>
+            </div>
             {user ? (
               <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => setIsAiContextModalOpen(true)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider transition-all border ${
+                    userProfile?.aiContext?.goals || userProfile?.aiContext?.style || userProfile?.aiContext?.work
+                      ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+                      : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
+                  }`}
+                >
+                  <Brain size={14} />
+                  {userProfile?.aiContext?.goals || userProfile?.aiContext?.style || userProfile?.aiContext?.work ? t.memoryActive : t.setMemory}
+                </button>
                 <button 
                   onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
                   className={`p-2 rounded-full transition-all ${showFavoritesOnly ? 'bg-red-500/20 text-red-400' : 'text-zinc-400 hover:text-white hover:bg-zinc-800'}`}
@@ -241,7 +485,7 @@ export default function App() {
                 className="bg-white text-black px-4 py-1.5 rounded-full text-sm font-bold hover:bg-zinc-200 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isLoggingIn ? <Loader2 size={16} className="animate-spin" /> : <UserIcon size={16} />}
-                {isLoggingIn ? 'Signing in...' : 'Sign In'}
+                {isLoggingIn ? t.signingIn : t.signIn}
               </button>
             )}
           </div>
@@ -257,11 +501,10 @@ export default function App() {
             transition={{ duration: 0.5 }}
           >
             <h1 className="text-5xl md:text-7xl font-black tracking-tight mb-6 bg-gradient-to-b from-white to-zinc-500 bg-clip-text text-transparent">
-              Find the perfect AI <br /> for any task.
+              {t.heroTitle}
             </h1>
             <p className="text-zinc-400 text-lg md:text-xl max-w-2xl mx-auto mb-10">
-              Nexus is the world's most advanced AI tool directory. 
-              Use our smart search to find solutions by describing your problem.
+              {t.heroSubtitle}
             </p>
           </motion.div>
 
@@ -275,10 +518,22 @@ export default function App() {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={isSmartSearch ? "Describe what you want to achieve..." : "Search by name, category, or tags..."}
-                className="w-full bg-zinc-900/50 border border-zinc-800 rounded-2xl py-5 pl-14 pr-32 text-lg focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-zinc-700 transition-all placeholder:text-zinc-600"
+                placeholder={isSmartSearch ? t.smartSearchPlaceholder : t.searchPlaceholder}
+                className="w-full bg-zinc-900/50 border border-zinc-800 rounded-2xl py-5 pl-14 pr-40 text-lg focus:outline-none focus:ring-2 focus:ring-white/20 focus:border-zinc-700 transition-all placeholder:text-zinc-600"
               />
               <div className="absolute inset-y-2 right-2 flex items-center gap-2">
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSmartResults(null);
+                    }}
+                    className="p-2 text-zinc-500 hover:text-white transition-colors"
+                  >
+                    <XCircle size={20} />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setIsSmartSearch(!isSmartSearch)}
@@ -289,15 +544,16 @@ export default function App() {
                   }`}
                 >
                   <Sparkles size={14} />
-                  {isSmartSearch ? 'Smart' : 'Standard'}
+                  {isSmartSearch ? t.smartMode : t.standardMode}
                 </button>
                 {isSmartSearch && (
                   <button
                     type="submit"
                     disabled={isLoading || !searchQuery.trim()}
-                    className="bg-zinc-100 text-black px-4 py-2 rounded-xl text-sm font-bold hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="bg-zinc-100 text-black px-4 py-2 rounded-xl text-sm font-bold hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   >
-                    {isLoading ? <Loader2 size={18} className="animate-spin" /> : 'Search'}
+                    {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Zap size={18} />}
+                    {isLoading ? t.thinking : t.search}
                   </button>
                 )}
               </div>
@@ -338,13 +594,37 @@ export default function App() {
           </div>
         </section>
 
+        {/* Cost Intelligence Section */}
+        {userProfile && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <CostIntelligence 
+              profile={userProfile} 
+              onUpdateBudget={handleUpdateBudget}
+              language={language}
+            />
+            <PrivacyTransparency 
+              profile={userProfile} 
+              onUpdatePrivacy={handleUpdatePrivacy}
+              language={language}
+            />
+          </div>
+        )}
+
+        {/* Workflows Section */}
+        <WorkflowSection 
+          onApply={handleApplyWorkflow} 
+          translations={t} 
+          appliedId={appliedWorkflowId} 
+        />
+
         {/* Filters and Grid */}
-        <section>
+        <section id="tools-section">
           <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <CategoryPills 
               categories={CATEGORIES} 
               activeCategory={activeCategory} 
               onSelect={setActiveCategory} 
+              translations={t.categories}
             />
             {user && (
               <button
@@ -356,15 +636,28 @@ export default function App() {
                 }`}
               >
                 <Heart size={16} fill={showFavoritesOnly ? "currentColor" : "none"} />
-                Favorites Only
+                {t.favoritesOnly}
               </button>
             )}
           </div>
 
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-sm font-bold uppercase tracking-widest text-zinc-500">
-              {isLoading ? 'AI is thinking...' : `${filteredTools.length} Tools Found`}
-            </h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-2">
+                {isLoading ? t.aiThinking : `${filteredTools.length} ${t.toolsFound}`}
+                {isTranslating && (
+                  <span className="flex items-center gap-1 text-blue-400 animate-pulse">
+                    <Loader2 size={12} className="animate-spin" />
+                    {t.translating}
+                  </span>
+                )}
+              </h2>
+              {isSmartSearch && smartResults && (
+                <span className="px-2 py-0.5 bg-white/10 text-white/60 text-[10px] font-bold uppercase tracking-tighter rounded border border-white/5">
+                  {t.aiRecommended}
+                </span>
+              )}
+            </div>
             <div className="h-px flex-1 bg-zinc-800/50 mx-6"></div>
           </div>
 
@@ -404,7 +697,11 @@ export default function App() {
                     transition={{ duration: 0.2 }}
                     className="relative"
                   >
-                    <ToolCard tool={tool} />
+                    <ToolCard 
+                      tool={tool} 
+                      freeAlternativeLabel={t.freeAlternative} 
+                      translatedDescription={translatedDescriptions[`${language}_${tool.id}`] || t.toolDescriptions?.[tool.id]}
+                    />
                     {user && (
                       <button
                         onClick={() => toggleFavorite(tool.id)}
@@ -428,8 +725,8 @@ export default function App() {
               <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-zinc-900 border border-zinc-800 mb-4">
                 <Search size={32} className="text-zinc-700" />
               </div>
-              <h3 className="text-xl font-semibold text-zinc-300 mb-2">No tools found</h3>
-              <p className="text-zinc-500">Try adjusting your search or filters to find what you're looking for.</p>
+              <h3 className="text-xl font-semibold text-zinc-300 mb-2">{t.noToolsFound}</h3>
+              <p className="text-zinc-500">{t.noToolsSubtitle}</p>
             </div>
           )}
         </section>
@@ -460,6 +757,14 @@ export default function App() {
           © 2026 Nexus AI Aggregator. All rights reserved.
         </div>
       </footer>
+
+      <AiContextModal 
+        isOpen={isAiContextModalOpen} 
+        onClose={() => setIsAiContextModalOpen(false)} 
+        initialContext={userProfile?.aiContext}
+        onSave={handleSaveAiContext}
+        language={language}
+      />
     </div>
   );
 }

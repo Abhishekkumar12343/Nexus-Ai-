@@ -4,9 +4,10 @@ interface CategoryPillsProps {
   categories: string[];
   activeCategory: string | null;
   onSelect: (category: string | null) => void;
+  translations?: Record<string, string>;
 }
 
-const CategoryPills: React.FC<CategoryPillsProps> = ({ categories, activeCategory, onSelect }) => {
+const CategoryPills: React.FC<CategoryPillsProps> = ({ categories, activeCategory, onSelect, translations = {} }) => {
   return (
     <div className="flex items-center gap-2 overflow-x-auto pb-4 no-scrollbar">
       <button
@@ -17,7 +18,7 @@ const CategoryPills: React.FC<CategoryPillsProps> = ({ categories, activeCategor
             : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-zinc-200'
         }`}
       >
-        All Tools
+        {translations["All"] || "All Tools"}
       </button>
       {categories.map((category) => (
         <button
@@ -29,7 +30,7 @@ const CategoryPills: React.FC<CategoryPillsProps> = ({ categories, activeCategor
               : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-700 hover:text-zinc-200'
           }`}
         >
-          {category}
+          {translations[category] || category}
         </button>
       ))}
     </div>

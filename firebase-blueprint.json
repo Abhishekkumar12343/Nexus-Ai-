@@ -30,6 +30,56 @@
           },
           "description": "List of tool IDs favorited by the user."
         },
+        "aiContext": {
+          "type": "object",
+          "properties": {
+            "goals": { "type": "string", "description": "User's long-term goals." },
+            "style": { "type": "string", "description": "User's preferred working style." },
+            "work": { "type": "string", "description": "User's current work context." }
+          },
+          "description": "Persistent AI context to avoid repeating information across sessions."
+        },
+        "language": {
+          "type": "string",
+          "enum": ["en", "hi", "ta", "te", "hinglish"],
+          "description": "User's preferred language for the UI and AI interactions."
+        },
+        "budget": {
+          "type": "object",
+          "properties": {
+            "monthlyLimit": { "type": "number", "description": "Monthly budget limit in USD." },
+            "alertThreshold": { "type": "number", "description": "Percentage threshold for budget alerts." }
+          },
+          "description": "User's budget settings for AI usage."
+        },
+        "totalSpend": {
+          "type": "number",
+          "description": "Total amount spent on AI queries in USD."
+        },
+        "costHistory": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "timestamp": { "type": "string", "format": "date-time" },
+              "operation": { "type": "string" },
+              "model": { "type": "string" },
+              "cost": { "type": "number" },
+              "tokens": { "type": "number" }
+            }
+          },
+          "description": "History of AI query costs."
+        },
+        "privacy": {
+          "type": "object",
+          "properties": {
+            "dataLogging": { "type": "boolean", "description": "Whether to log query metadata." },
+            "trainingOptOut": { "type": "boolean", "description": "Whether to opt out of AI training." },
+            "retentionDays": { "type": "number", "description": "Number of days to retain query metadata." }
+          },
+          "description": "User's data privacy and transparency settings."
+        },
         "role": {
           "type": "string",
           "enum": ["admin", "user"],

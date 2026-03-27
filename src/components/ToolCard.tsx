@@ -4,9 +4,11 @@ import { Tool } from '../types';
 
 interface ToolCardProps {
   tool: Tool;
+  freeAlternativeLabel?: string;
+  translatedDescription?: string;
 }
 
-const ToolCard: React.FC<ToolCardProps> = ({ tool }) => {
+const ToolCard: React.FC<ToolCardProps> = ({ tool, freeAlternativeLabel = 'Free Alternative', translatedDescription }) => {
   const getPricingColor = (model: string) => {
     switch (model) {
       case 'Free': return 'bg-green-500/10 text-green-400 border-green-500/20';
@@ -18,7 +20,7 @@ const ToolCard: React.FC<ToolCardProps> = ({ tool }) => {
 
   return (
     <div className="group relative bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:border-zinc-700 hover:shadow-2xl hover:shadow-zinc-950/50">
-      <div className="aspect-video w-full overflow-hidden bg-zinc-800">
+      <div className="aspect-video w-full relative overflow-hidden bg-zinc-800">
         <img 
           src={tool.imageUrl} 
           alt={tool.name}
@@ -43,10 +45,10 @@ const ToolCard: React.FC<ToolCardProps> = ({ tool }) => {
         </div>
         
         <p className="text-zinc-400 text-sm line-clamp-2 mb-4 h-10">
-          {tool.description}
+          {translatedDescription || tool.description}
         </p>
         
-        <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex flex-wrap gap-2 items-center mb-4">
           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-zinc-800 text-zinc-300 border border-zinc-700">
             {tool.category}
           </span>
@@ -54,6 +56,23 @@ const ToolCard: React.FC<ToolCardProps> = ({ tool }) => {
             {tool.pricingModel}
           </span>
         </div>
+
+        {tool.freeAlternative && (
+          <div className="mt-4 pt-4 border-t border-zinc-800/50">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{freeAlternativeLabel}</span>
+              <a 
+                href={tool.freeAlternative.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-medium text-zinc-300 hover:text-white flex items-center gap-1 transition-colors"
+              >
+                {tool.freeAlternative.name}
+                <ExternalLink size={10} />
+              </a>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

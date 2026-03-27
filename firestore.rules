@@ -14,6 +14,11 @@ service cloud.firestore {
     //   - displayName: string (optional) - User's display name
     //   - photoURL: string (optional, uri format) - User's photo URL
     //   - favorites: list (required, strings) - List of tool IDs
+    //   - aiContext: map (optional) - Persistent AI context (goals, style, work)
+    //   - budget: map (optional) - Monthly budget limit and alert threshold
+    //   - totalSpend: number (optional) - Total amount spent on AI queries
+    //   - costHistory: list (optional) - History of AI query costs
+    //   - privacy: map (optional) - Data privacy and transparency settings
     //   - role: string (required, 'admin' or 'user') - User's role
     //   - createdAt: string (required, date-time format) - Creation timestamp
     //
@@ -47,14 +52,56 @@ service cloud.firestore {
         dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
     }
 
+    function isValidAiContext(data) {
+      return data is map &&
+             data.keys().hasOnly(['goals', 'style', 'work']) &&
+             (!('goals' in data) || data.goals is string) &&
+             (!('style' in data) || data.style is string) &&
+             (!('work' in data) || data.work is string);
+    }
+
+    function isValidBudget(data) {
+      return data is map &&
+             data.keys().hasOnly(['monthlyLimit', 'alertThreshold']) &&
+             data.monthlyLimit is number &&
+             data.alertThreshold is number &&
+             data.alertThreshold >= 10 && data.alertThreshold <= 100;
+    }
+
+    function isValidCostRecord(data) {
+      return data is map &&
+             data.keys().hasAll(['id', 'timestamp', 'operation', 'model', 'cost', 'tokens']) &&
+             data.id is string &&
+             isValidDateString(data.timestamp) &&
+             data.operation is string &&
+             data.model is string &&
+             data.cost is number &&
+             data.tokens is number;
+    }
+
+    function isValidPrivacy(data) {
+      return data is map &&
+             data.keys().hasOnly(['dataLogging', 'trainingOptOut', 'retentionDays']) &&
+             data.dataLogging is bool &&
+             data.trainingOptOut is bool &&
+             data.retentionDays is number &&
+             data.retentionDays >= 1 && data.retentionDays <= 90;
+    }
+
     function isValidUser(data) {
       return data.keys().hasAll(['uid', 'email', 'favorites', 'role', 'createdAt']) &&
-             data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'favorites', 'role', 'createdAt']) &&
+             data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'favorites', 'role', 'createdAt', 'aiContext', 'language', 'budget', 'totalSpend', 'costHistory', 'privacy']) &&
              data.uid == request.auth.uid &&
              isValidEmail(data.email) &&
              data.favorites is list &&
              data.role in ['admin', 'user'] &&
-             isValidDateString(data.createdAt);
+             isValidDateString(data.createdAt) &&
+             (!('aiContext' in data) || isValidAiContext(data.aiContext)) &&
+             (!('language' in data) || data.language in ['en', 'hi', 'ta', 'te', 'hinglish']) &&
+             (!('budget' in data) || isValidBudget(data.budget)) &&
+             (!('totalSpend' in data) || data.totalSpend is number) &&
+             (!('costHistory' in data) || (data.costHistory is list && data.costHistory.size() <= 100)) &&
+             (!('privacy' in data) || isValidPrivacy(data.privacy));
     }
 
     // ===============================================================
