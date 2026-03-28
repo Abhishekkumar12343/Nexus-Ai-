@@ -202,8 +202,7 @@ export default function App() {
           }
         }
       } catch (err) {
-        console.error('Smart search failed:', err);
-        setError(err instanceof Error ? err.message : 'An unexpected error occurred');
+        handleFirestoreError(err, OperationType.GET, 'api/smart-search');
       } finally {
         setIsLoading(false);
       }
@@ -307,7 +306,7 @@ export default function App() {
         costHistory: newHistory 
       } : null);
     } catch (err) {
-      console.error('Failed to update cost history:', err);
+      handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
     }
   };
 
@@ -396,7 +395,7 @@ export default function App() {
           });
         }
       } catch (err) {
-        console.error('Translation failed:', err);
+        handleFirestoreError(err, OperationType.GET, 'api/translate-tools');
       } finally {
         setIsTranslating(false);
       }
