@@ -4,6 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nexus AI Aggregator</title>
+    <script>
+      // Suppress benign Vite HMR WebSocket errors in the AI Studio environment
+      window.addEventListener('unhandledrejection', (event) => {
+        if (event.reason && (
+          event.reason.message?.includes('WebSocket closed without opened') ||
+          event.reason.message?.includes('[vite] failed to connect to websocket')
+        )) {
+          event.preventDefault();
+          console.warn('Suppressed benign Vite HMR error:', event.reason.message);
+        }
+      });
+      window.addEventListener('error', (event) => {
+        if (event.message && (
+          event.message.includes('WebSocket closed without opened') ||
+          event.message.includes('[vite] failed to connect to websocket')
+        )) {
+          event.preventDefault();
+          console.warn('Suppressed benign Vite HMR error:', event.message);
+        }
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
