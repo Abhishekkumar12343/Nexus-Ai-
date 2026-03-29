@@ -6,7 +6,18 @@ import { TOOLS_DB } from "../lib/tools-db";
 const getApiKey = () => {
   // process.env.API_KEY is the user-selected key from the dialog
   // process.env.GEMINI_API_KEY is the default environment key
-  return process.env.API_KEY || process.env.GEMINI_API_KEY;
+  // We use a robust check to handle different environments and potential string "undefined"
+  let key = (typeof process !== 'undefined' && process.env) 
+    ? (process.env.API_KEY || process.env.GEMINI_API_KEY)
+    : (window as any).process?.env?.API_KEY || (window as any).process?.env?.GEMINI_API_KEY;
+    
+  // Fallback to import.meta.env for Vite
+  if (!key || key === "undefined" || key === "" || key === "null") {
+    key = (import.meta as any).env?.VITE_GEMINI_API_KEY;
+  }
+    
+  if (!key || key === "undefined" || key === "" || key === "null") return undefined;
+  return key;
 };
 
 async function generateWithRetry(ai: any, params: any, maxRetries = 3) {
@@ -38,7 +49,7 @@ export async function smartSearch(query: string, aiContext?: any, language?: str
   const apiKey = getApiKey();
   
   if (!apiKey) {
-    throw new Error("Gemini API key is missing. Please ensure GEMINI_API_KEY is set in the environment.");
+    throw new Error("Gemini API key is missing. Please ensure GEMINI_API_KEY is configured in the Secrets panel in AI Studio.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
@@ -134,7 +145,7 @@ export async function translateTools(toolIds: string[], language: string) {
   const apiKey = getApiKey();
   
   if (!apiKey) {
-    throw new Error("Gemini API key is missing. Please ensure GEMINI_API_KEY is set in the environment.");
+    throw new Error("Gemini API key is missing. Please ensure GEMINI_API_KEY is configured in the Secrets panel in AI Studio.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
