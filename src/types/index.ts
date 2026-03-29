@@ -23,13 +23,13 @@ export interface AiContext {
 }
 
 export interface UserBudget {
-  limit: number;
+  monthlyLimit: number;
   alertThreshold: number; // percentage, e.g., 80
 }
 
 export interface CostRecord {
   id: string;
-  timestamp: number;
+  timestamp: string; // ISO 8601
   operation: string;
   model: string;
   inputTokens: number;

@@ -13,13 +13,13 @@ interface CostIntelligenceProps {
 
 export const CostIntelligence: React.FC<CostIntelligenceProps> = ({ profile, onUpdateBudget, language = 'en' }) => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [newLimit, setNewLimit] = useState(profile.budget?.limit || 5.00);
+  const [newLimit, setNewLimit] = useState(profile.budget?.monthlyLimit || 5.00);
   const [newThreshold, setNewThreshold] = useState(profile.budget?.alertThreshold || 80);
   const [isSaving, setIsSaving] = useState(false);
 
   const t = TRANSLATIONS[language];
   const totalSpend = profile.totalSpend || 0;
-  const budgetLimit = profile.budget?.limit || 5.00;
+  const budgetLimit = profile.budget?.monthlyLimit || 5.00;
   const spendPercentage = (totalSpend / budgetLimit) * 100;
   const isOverBudget = totalSpend >= budgetLimit;
   const isNearBudget = spendPercentage >= (profile.budget?.alertThreshold || 80);
@@ -27,7 +27,7 @@ export const CostIntelligence: React.FC<CostIntelligenceProps> = ({ profile, onU
   const handleSaveBudget = async () => {
     setIsSaving(true);
     try {
-      await onUpdateBudget({ limit: newLimit, alertThreshold: newThreshold });
+      await onUpdateBudget({ monthlyLimit: newLimit, alertThreshold: newThreshold });
       setIsSettingsOpen(false);
     } catch (error) {
       console.error('Failed to save budget:', error);
