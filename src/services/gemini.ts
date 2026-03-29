@@ -4,7 +4,9 @@ import { TOOLS_DB } from "../lib/tools-db";
 // Use the provided API key from the environment
 // AI Studio Build injects this into the environment
 const getApiKey = () => {
-  return process.env.GEMINI_API_KEY;
+  // process.env.API_KEY is the user-selected key from the dialog
+  // process.env.GEMINI_API_KEY is the default environment key
+  return process.env.API_KEY || process.env.GEMINI_API_KEY;
 };
 
 async function generateWithRetry(ai: any, params: any, maxRetries = 3) {

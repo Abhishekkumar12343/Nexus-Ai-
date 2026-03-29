@@ -296,6 +296,24 @@ export default function App() {
   
   // Live API State
   const [isLiveOpen, setIsLiveOpen] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(true);
+
+  useEffect(() => {
+    const checkKey = async () => {
+      if (window.aistudio?.hasSelectedApiKey) {
+        const selected = await window.aistudio.hasSelectedApiKey();
+        setHasApiKey(selected);
+      }
+    };
+    checkKey();
+  }, []);
+
+  const handleSelectKey = async () => {
+    if (window.aistudio?.openSelectKey) {
+      await window.aistudio.openSelectKey();
+      setHasApiKey(true);
+    }
+  };
 
   const t = TRANSLATIONS[language];
 
@@ -829,6 +847,15 @@ export default function App() {
                 </button>
 
                 <div className="hidden sm:flex items-center gap-3 pl-4 border-l border-zinc-800">
+                  {!hasApiKey && (
+                    <button
+                      onClick={handleSelectKey}
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition-all"
+                    >
+                      <Zap size={14} />
+                      Select API Key
+                    </button>
+                  )}
                   <div className="relative group/user">
                     <button className="flex items-center gap-2">
                       <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-8 h-8 rounded-full border border-zinc-700" />
